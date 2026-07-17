@@ -1,0 +1,10 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.log
+
+# Keep this repo self-contained — the *installed* pi config lives under
+# ~/.pi (or $PI_HOME), not inside pi-setup. Ignore accidental copies.
+.pi/
+node_modules/

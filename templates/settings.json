@@ -1,0 +1,32 @@
+{
+  "subagents": {
+    "agentOverrides": {
+      "scout": {
+        "model": "minimax/MiniMax-M2.7-highspeed",
+        "fallbackModels": ["minimax/MiniMax-M2.7"],
+        "thinking": "high"
+      },
+      "planner": {
+        "model": "minimax/MiniMax-M2.7-highspeed",
+        "fallbackModels": ["minimax/MiniMax-M2.7"]
+      },
+      "worker": {
+        "model": "minimax/MiniMax-M2.7-highspeed",
+        "thinking": "high"
+      },
+      "delegate": {
+        "model": "minimax/MiniMax-M2.7-highspeed",
+        "thinking": "medium"
+      },
+      "researcher": {
+        "model": "minimax/MiniMax-M2.7"
+      },
+      "reviewer": {
+        "model": "minimax/MiniMax-M2.7"
+      },
+      "context-builder": {
+        "model": "minimax/MiniMax-M2.7"
+      }
+    }
+  }
+}
