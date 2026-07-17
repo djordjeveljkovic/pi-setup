@@ -24,6 +24,9 @@ you can recreate your whole pi environment, picking exactly what you want.
 ```
 
 Everything is plain bash + git + npm. **No AI, no magic, no network beyond git/npm.**
+The catalog of installable components lives in [`components.conf`](components.conf) —
+edit that file (or run `./install.sh --add`) to add a repo; the script itself rarely
+changes.
 
 ---
 
@@ -61,8 +64,10 @@ Then start (or restart) pi and run `/reload` to activate everything.
 
 ## The catalog
 
-These are the components `install.sh` knows about. Run `./install.sh --list` to
-print this from the script itself.
+The catalog lives in [`components.conf`](components.conf) — a plain, declarative file
+that is the **single source of truth** (`install.sh` just reads it). The table below
+is what it currently declares. Print it with `./install.sh --list`, or validate it
+with `./install.sh --check`.
 
 | ID               | Type     | Repo                                  | Installs to                            | Notes |
 |------------------|----------|---------------------------------------|----------------------------------------|-------|
@@ -80,6 +85,60 @@ All repos live under [`djordjeveljkovic`](https://github.com/djordjeveljkovic?ta
 **Dependencies are handled automatically:** selecting `skill-manager` also
 installs `list-picker` (it depends on it via `file:../list-picker`), and
 dependencies are always installed *before* the things that need them.
+
+---
+
+## Managing the catalog
+
+Everything installable is declared in [`components.conf`](components.conf) as a list
+of `[[component]]` blocks. `install.sh` is just the engine — you rarely edit it.
+
+### Fields
+
+| Field     | Required | Applies to       | Meaning |
+|-----------|----------|------------------|---------|
+| `id`      | yes      | all              | unique lowercase id (`[a-z0-9-]+`); used in `--only`, deps, menu |
+| `type`    | yes      | all              | `extension` · `skills` · `step` |
+| `repo`    | yes*     | extension/skills | GitHub repo name (cloned from `$PI_GH_USER/<repo>`) |
+| `path`    | yes*     | extension/skills | install path under `$PI_HOME` |
+| `builtin` | yes*     | step             | handler name (`install-pi`, `settings`, …) |
+| `deps`    | no       | all              | space/comma-separated ids; installed first |
+| `group`   | no       | all              | menu group label (auto-derived from `type` if omitted) |
+| `desc`    | no       | all              | human description shown in the menu / `--list` |
+
+\* required depending on `type`.
+
+### Adding a repo
+
+**Option A — edit the manifest** (append a block):
+```conf
+[[component]]
+id   = my-extension
+type = extension
+repo = my-extension
+path = agent/extensions/my-extension
+desc = What it does
+```
+
+**Option B — interactive wizard:**
+```bash
+./install.sh --add
+```
+
+**Option C — one shot** (non-interactive):
+```bash
+./install.sh --add id=my-extension type=extension \
+  repo=my-extension path=agent/extensions/my-extension desc="What it does"
+```
+
+All three are equivalent. After adding, the manifest is re-validated automatically
+(run `./install.sh --check` anytime to lint it).
+
+### Validation
+
+The manifest is validated on every run. The validator catches, with line numbers:
+duplicate or malformed ids, missing/unknown `type`, missing required fields per
+type, unknown dependency ids, dependency cycles, and unknown keys (likely typos).
 
 ---
 
@@ -130,6 +189,9 @@ Selection: 1,4,7
 | `--dry-run`              | show what would happen, change nothing |
 | `-y`, `--no-interaction` | never prompt; defaults to the full set if nothing chosen |
 | `--list`                 | print the catalog and exit |
+| `--check`, `--validate`  | validate `components.conf` and exit |
+| `--add key=val ...`      | append a component to `components.conf` (interactive if no args) |
+| `--self-update`          | `git pull` this repo, then `./install.sh --update --all` |
 | `-h`, `--help`           | help |
 
 ### Examples
@@ -142,6 +204,9 @@ Selection: 1,4,7
 ./install.sh --update --all                # pull latest for everything
 PI_GIT_PROTOCOL=https ./install.sh --all -y# use HTTPS (no SSH key needed)
 ./install.sh --dry-run --all               # preview only
+./install.sh --add                         # interactive: add a new repo to the catalog
+./install.sh --add id=my-ext type=extension repo=my-ext path=agent/extensions/my-ext desc="..."
+./install.sh --self-update                 # update pi-setup, then refresh all components
 ```
 
 ### Environment variables
@@ -152,6 +217,7 @@ PI_GIT_PROTOCOL=https ./install.sh --all -y# use HTTPS (no SSH key needed)
 | `PI_GH_USER`     | `djordjeveljkovic` | GitHub user/org to clone from |
 | `PI_GIT_PROTOCOL`| `ssh`              | `ssh` or `https` |
 | `PI_NPM_INSTALL` | `1`                | set `0` to skip `npm install` |
+| `PI_MANIFEST`    | `./components.conf`| path to the catalog file |
 
 ---
 
@@ -203,14 +269,21 @@ the template only seeds a sensible starting point and is never overwritten.
 
 ## Keeping things up to date
 
+One command does both — pull this repo, then refresh every installed component:
 ```bash
 cd pi-setup
-git pull                       # update the installer itself
+./install.sh --self-update
+```
+`--self-update` runs `git pull --ff-only` on pi-setup itself, then re-runs
+`./install.sh --update --all`. `--update` in turn `git pull --ff-only`s each
+installed clone and re-runs `npm install` for extensions. It only touches repos
+the installer created.
+
+Or by hand:
+```bash
+git pull                       # update pi-setup itself
 ./install.sh --update --all    # pull latest for every installed component
 ```
-
-`--update` runs `git pull --ff-only` on each installed clone and re-runs
-`npm install` for extensions. It only touches repos the installer created.
 
 ---
 
@@ -356,7 +429,7 @@ Tell the user, concisely:
 - which protocol was used and why,
 - whether `MINIMAX_API_KEY` is set (yes/no — not its value),
 - any warnings from the installer and how to resolve them,
-- the single command to stay updated: `cd ~/pi-setup && git pull && ./install.sh --update --all`.
+- the single command to stay updated: `cd ~/pi-setup && ./install.sh --self-update`.
 
 ## Guardrails for the AI
 - **Never commit secrets.** `MINIMAX_API_KEY` and any API key go in environment
@@ -372,7 +445,8 @@ Tell the user, concisely:
 
 ```
 pi-setup/
-├── install.sh              # the installer (interactive + CLI)
+├── install.sh              # the engine: parses + validates the catalog, installs
+├── components.conf         # the catalog — single source of truth (edit this)
 ├── templates/
 │   └── settings.json       # subagent model overrides seed file
 ├── README.md               # you are here
@@ -380,9 +454,10 @@ pi-setup/
 └── .gitignore
 ```
 
-To add a new component, edit the **Catalog** block near the top of
-`install.sh` (the `COMPONENT_ORDER` array plus the `C_*` associative arrays).
-That's the only place that needs changing.
+To add a new component, append a `[[component]]` block to
+[`components.conf`](components.conf) (or run `./install.sh --add`). No code
+changes are needed. You only need to edit `install.sh` to add a new `type=step`
+*builtin* handler (for a non-clone setup step).
 
 ## License
 
